@@ -61,8 +61,6 @@ This implementation is based on **OpenRLHF 0.3.8**.
 | Low-level RL | OpenRLHF PPO with ToSCA reward composition | [`trainer/ppo_trainer.py`](trainer/ppo_trainer.py) |
 | Rewards | Dense satisfaction, KL penalty, and intrinsic motivation | [`models/utils.py`](models/utils.py) |
 
-> [!IMPORTANT]
-> The high-level DQN and low-level PPO stages are exposed as separate commands. Reproducing the fully interleaved online loop from Algorithm 1 requires an external coordinator for strategy inference, response rollout, oracle scoring, and buffer construction.
 
 ## Quick Start
 
