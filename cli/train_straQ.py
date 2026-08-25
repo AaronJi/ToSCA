@@ -1,17 +1,13 @@
 import argparse
 import math
 import os
-import sys
 from datetime import datetime
 
 from transformers.trainer import get_scheduler
 
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-# print(sys.path)
-
-from openrlhf.datasets import SFTDataset
+from openrlhf.datasets.tosca_dataset import StrategyQDataset
 from openrlhf.models import Actor
-from openrlhf.trainer import SFTTrainer
+from openrlhf.trainer import StrategyQTrainer
 from openrlhf.utils import blending_datasets, get_strategy, get_tokenizer
 
 
@@ -68,20 +64,18 @@ def train(args):
     )
     train_data = train_data.select(range(min(args.max_samples, len(train_data))))
     eval_data = eval_data.select(range(min(args.max_samples, len(eval_data))))
-    train_dataset = SFTDataset(
+    train_dataset = StrategyQDataset(
         train_data,
         tokenizer,
         args.max_len,
         strategy,
-        pretrain_mode=args.pretrain_mode,
         input_template=args.input_template,
     )
-    eval_dataset = SFTDataset(
+    eval_dataset = StrategyQDataset(
         eval_data,
         tokenizer,
         args.max_len,
         strategy,
-        pretrain_mode=args.pretrain_mode,
         input_template=args.input_template,
     )
 
@@ -90,14 +84,14 @@ def train(args):
         args.micro_train_batch_size,
         True,
         True,
-        train_dataset.packing_collate_fn if args.packing_samples else train_dataset.collate_fn,
+        train_dataset.collate_fn,
     )
     eval_dataloader = strategy.setup_dataloader(
         eval_dataset,
         args.micro_train_batch_size,
         True,
         False,
-        eval_dataset.packing_collate_fn if args.packing_samples else eval_dataset.collate_fn,
+        eval_dataset.collate_fn,
     )
 
     # scheduler
@@ -119,8 +113,7 @@ def train(args):
         )
 
     # prepare models
-    # (target_model, optim, scheduler) = strategy.prepare((model, optim, scheduler))
-    (model, optim, scheduler) = strategy.prepare((model, optim, scheduler))
+    (model, optim, scheduler), target_model = strategy.prepare((model, optim, scheduler), target_model)
 
     # load checkpoint
     if args.load_checkpoint:
@@ -129,19 +122,22 @@ def train(args):
     os.makedirs(args.save_path, exist_ok=True)
 
     # configure Trainer
-    trainer = SFTTrainer(
+    trainer = StrategyQTrainer(
         model=model,
-        target_model=model,
+        target_model=target_model,
         strategy=strategy,
         optim=optim,
         train_dataloader=train_dataloader,
         eval_dataloader=eval_dataloader,
         scheduler=scheduler,
         max_norm=args.max_norm,
-        pretrain_mode=args.pretrain_mode,
         batch_size=args.train_batch_size,
         max_epochs=args.max_epochs,
         tokenizer=tokenizer,
+        action_tokens=train_dataset.action_tokens,
+        target_update_steps=args.target_update_steps,
+        gamma=args.gamma,
+        q_value_mode=args.q_value_mode,
     )
 
     trainer.fit(args)
@@ -153,18 +149,18 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Checkpoint
-    parser.add_argument("--save_path", type=str, default="./ckpt")
+    parser.add_argument("--save_path", type=str, default="<HIGH_LEVEL_Q_OUTPUT_DIR>")
     parser.add_argument("--save_steps", type=int, default=-1)
     parser.add_argument("--logging_steps", type=int, default=1)
     parser.add_argument("--eval_steps", type=int, default=-1)
-    parser.add_argument("--ckpt_path", type=str, default="./ckpt/checkpoints_sft")
+    parser.add_argument("--ckpt_path", type=str, default="<QH_CHECKPOINT_DIR>")
     parser.add_argument("--max_ckpt_num", type=int, default=3)
     parser.add_argument("--max_ckpt_mem", type=int, default=1000)  # 1000GB
     parser.add_argument("--load_checkpoint", action="store_true", default=False)
 
     # DeepSpeed
     parser.add_argument("--micro_train_batch_size", type=int, default=8, help="batch size per GPU")
-    parser.add_argument("--train_batch_size", type=int, default=128, help="Global training batch size")
+    parser.add_argument("--train_batch_size", type=int, default=64, help="Global training batch size")
     parser.add_argument("--max_norm", type=float, default=1.0, help="Gradient clipping")
     parser.add_argument("--gradient_checkpointing", action="store_true", default=False)
     parser.add_argument("--seed", type=int, default=42)
@@ -179,12 +175,11 @@ if __name__ == "__main__":
     parser.add_argument("--gradient_checkpointing_use_reentrant", action="store_true", default=False)
     parser.add_argument("--disable_fast_tokenizer", action="store_true", default=False)
 
-    # SFT
+    # High-level Q model
     parser.add_argument("--max_epochs", type=int, default=2)
     parser.add_argument("--aux_loss_coef", type=float, default=0, help="MoE balancing loss")
     parser.add_argument("--pretrain", type=str, default=None)
     parser.add_argument("--learning_rate", type=float, default=5e-6)
-    parser.add_argument("--pretrain_mode", action="store_true", default=False, help="Use pretrain loss")
     parser.add_argument("--lr_scheduler", type=str, default="cosine_with_min_lr")
     parser.add_argument("--l2", type=float, default=0, help="weight decay loss")
     parser.add_argument("--adam_betas", type=float, nargs=2, default=(0.9, 0.95), help="Betas for Adam optimizer")
@@ -195,9 +190,26 @@ if __name__ == "__main__":
     parser.add_argument("--lora_alpha", type=int, default=16)
     parser.add_argument("--target_modules", type=str, nargs="*", default="all-linear")
     parser.add_argument("--lora_dropout", type=float, default=0)
-
-    # packing SFT samples without CrossAttention
     parser.add_argument("--packing_samples", action="store_true", default=False)
+
+    # ToSCA high-level DQN
+    parser.add_argument("--gamma", type=float, default=0.85, help="DQN discount factor for Q_H")
+    parser.add_argument("--target_update_steps", type=int, default=10, help="Steps between target Q_H updates")
+    parser.add_argument(
+        "--q_value_mode",
+        type=str,
+        default="logit",
+        choices=("logit", "logprob", "prob"),
+        help="How to turn strategy-token LM scores into Q values",
+    )
+    parser.add_argument("--strategies", type=str, default=None, help="Comma-separated strategy names")
+    parser.add_argument("--strategy_tokens", type=str, default=None, help="Comma-separated action strings")
+    parser.add_argument("--strategy_key", type=str, default="strategy", help="JSON dataset key for a_t")
+    parser.add_argument("--reward_key", type=str, default="reward", help="JSON dataset key for r_sat")
+    parser.add_argument("--done_key", type=str, default="done", help="JSON dataset key for terminal flag")
+    parser.add_argument("--current_input_key", type=str, default=None, help="Optional ready-made high-level prompt key")
+    parser.add_argument("--next_input_key", type=str, default=None, help="Optional ready-made next high-level prompt key")
+    parser.add_argument("--next_state_prefix", type=str, default="next_", help="Prefix for next-state structured fields")
 
     # custom dataset
     parser.add_argument("--dataset", type=str, default=None)
@@ -207,23 +219,23 @@ if __name__ == "__main__":
 
     parser.add_argument("--input_key", type=str, default="input", help="JSON dataset key")
     parser.add_argument("--output_key", type=str, default=None, help="JSON dataset key")
-    parser.add_argument("--input_template", type=str, default="User: {}\nAssistant: ")
+    parser.add_argument("--input_template", type=str, default=None)
     parser.add_argument(
         "--apply_chat_template", action="store_true", default=False, help="Use HF tokenizer chat template"
     )
     parser.add_argument("--tokenizer_chat_template", type=str, default=None)
-    parser.add_argument("--max_samples", type=int, default=1e8, help="Max number of samples")
-    parser.add_argument("--max_len", type=int, default=2048, help="Max tokens for the samples")
+    parser.add_argument("--max_samples", type=int, default=100000000, help="Max number of samples")
+    parser.add_argument("--max_len", type=int, default=1024, help="Max tokens for the samples")
 
     # wandb parameters
     parser.add_argument("--use_wandb", type=str, default=None)
     parser.add_argument("--wandb_org", type=str, default=None)
     parser.add_argument("--wandb_group", type=str, default=None)
-    parser.add_argument("--wandb_project", type=str, default="openrlhf_train_sft")
+    parser.add_argument("--wandb_project", type=str, default="tosca_train_qh")
     parser.add_argument(
         "--wandb_run_name",
         type=str,
-        default="sft_%s" % datetime.now().strftime("%m%dT%H:%M"),
+        default="tosca_qh_%s" % datetime.now().strftime("%m%dT%H:%M"),
     )
     
     parser.add_argument("--learn_from_org", action="store_true", default=False)

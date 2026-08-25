@@ -243,8 +243,6 @@ class PPOTrainer(ABC):
                 if steps % update_timesteps == 0:
                     torch.cuda.empty_cache()
                     self.replay_buffer.normalize("advantages", self.strategy)
-                    print("!" * 100)
-                    print("replay_buffer", self.replay_buffer, len(self.replay_buffer))
                     status = self.ppo_train(steps // update_timesteps)
                     self.replay_buffer.clear()
                     torch.cuda.empty_cache()
@@ -273,8 +271,6 @@ class PPOTrainer(ABC):
             pin_memory=self.dataloader_pin_memory,
             collate_fn=self.replay_buffer.collate_fn,
         )
-        # self.strategy.print("@" * 100)
-        print("dataloader", len(dataloader))
         device = torch.cuda.current_device()
 
         status_list = []

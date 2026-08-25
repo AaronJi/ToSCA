@@ -138,6 +138,9 @@ class NaiveExperienceMaker(ABC):
             action_log_probs,
             base_action_log_probs,
             action_mask=action_mask,
+            intrinsic_reward=-action_log_probs.detach(),
+            intrinsic_reward_coef=generate_kwargs.get("intrinsic_reward_coef", 0.0),
+            dense_satisfaction_reward=generate_kwargs.get("dense_satisfaction_reward", False),
         )
         advantage, returns = self.get_advantages_and_returns(
             value,
@@ -154,6 +157,8 @@ class NaiveExperienceMaker(ABC):
             "response_length": action_mask.float().sum(dim=-1),
             "total_length": attention_mask.float().sum(dim=-1),
         }
+        if generate_kwargs.get("intrinsic_reward_coef", 0.0) > 0:
+            info["intrinsic_reward"] = masked_mean(-action_log_probs.detach(), action_mask, dim=-1)
         # reset model state
         self.actor.train()
         self.critic.train()
@@ -271,6 +276,9 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             action_log_probs,
             base_action_log_probs,
             action_mask=action_mask,
+            intrinsic_reward=-action_log_probs.detach(),
+            intrinsic_reward_coef=generate_kwargs.get("intrinsic_reward_coef", 0.0),
+            dense_satisfaction_reward=generate_kwargs.get("dense_satisfaction_reward", False),
         )
         advantage, returns = self.get_advantages_and_returns(
             value,
@@ -287,6 +295,8 @@ class RemoteExperienceMaker(NaiveExperienceMaker):
             "response_length": action_mask.float().sum(dim=-1),
             "total_length": attention_mask.float().sum(dim=-1),
         }
+        if generate_kwargs.get("intrinsic_reward_coef", 0.0) > 0:
+            info["intrinsic_reward"] = masked_mean(-action_log_probs.detach(), action_mask, dim=-1)
 
         if self.strategy.args.perf:
             batch_size = 1 if isinstance(prompts, str) else len(prompts)

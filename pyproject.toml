@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tosca-openrlhf"
+description = "ToSCA hierarchical reinforcement learning for conversational agents, based on OpenRLHF 0.3.8."
+readme = "README.md"
+requires-python = ">=3.10"
+dynamic = ["version", "dependencies"]
+
+[tool.setuptools]
+packages = [
+  "openrlhf",
+  "openrlhf.cli",
+  "openrlhf.datasets",
+  "openrlhf.models",
+  "openrlhf.trainer",
+  "openrlhf.trainer.ppo_utils",
+  "openrlhf.utils",
+]
+package-dir = { openrlhf = "." }
+
+[tool.setuptools.dynamic]
+version = { file = ["version.txt"] }
+dependencies = { file = ["requirements.txt"] }

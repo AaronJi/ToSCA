@@ -2,17 +2,14 @@ import argparse
 import itertools
 import math
 import os
-import sys
-from copy import deepcopy
 from datetime import datetime
 
 import torch
 from transformers.trainer import get_scheduler
 
-# sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
-# print(sys.path)
-
-from openrlhf.datasets import PromptDataset, SFTDataset
+from openrlhf.datasets.prompts_dataset import PromptDataset
+from openrlhf.datasets.sft_dataset import SFTDataset
+from openrlhf.datasets.tosca_dataset import ToSCAPromptDataset
 from openrlhf.models import Actor, get_llm_for_sequence_regression
 from openrlhf.trainer import PPOTrainer
 from openrlhf.utils import blending_datasets, get_strategy, get_tokenizer
@@ -116,7 +113,10 @@ def train(args):
         train_split=args.prompt_split,
     )
     prompts_data = prompts_data.select(range(min(args.max_samples, len(prompts_data))))
-    prompts_dataset = PromptDataset(prompts_data, tokenizer, strategy, input_template=args.input_template)
+    if args.apply_tosca_prompt:
+        prompts_dataset = ToSCAPromptDataset(prompts_data, tokenizer, strategy)
+    else:
+        prompts_dataset = PromptDataset(prompts_data, tokenizer, strategy, input_template=args.input_template)
     prompts_dataloader = strategy.setup_dataloader(prompts_dataset, args.micro_rollout_batch_size, True, True)
 
     if args.pretrain_data:
@@ -235,12 +235,15 @@ def train(args):
         ema_beta=0.992,
         ptx_coef=args.ptx_coef,
         max_norm=args.max_norm,
-        # fro GPT generation
+        # for GPT generation
         do_sample=True,
         max_new_tokens=args.generate_max_len,
         max_length=args.max_len,
         temperature=args.temperature,
         top_p=args.top_p,
+        top_k=args.top_k,
+        intrinsic_reward_coef=args.intrinsic_reward_coef,
+        dense_satisfaction_reward=not args.disable_dense_satisfaction_reward,
         pad_token_id=tokenizer.pad_token_id,
         eos_token_id=tokenizer.eos_token_id,
     )
@@ -269,43 +272,56 @@ def train(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     # Checkpoint
-    parser.add_argument("--save_path", type=str, default="./ckpt")
+    parser.add_argument("--save_path", type=str, default="<LOW_LEVEL_ACTOR_OUTPUT_DIR>")
     parser.add_argument("--save_steps", type=int, default=-1)
     parser.add_argument("--logging_steps", type=int, default=1)
     parser.add_argument("--eval_steps", type=int, default=-1)
-    parser.add_argument("--ckpt_path", type=str, default="./ckpt/checkpoints_ppo")
+    parser.add_argument("--ckpt_path", type=str, default="<LOW_LEVEL_PPO_CHECKPOINT_DIR>")
     parser.add_argument("--max_ckpt_num", type=int, default=3)
     parser.add_argument("--max_ckpt_mem", type=int, default=1000)  # 1000GB
     parser.add_argument("--load_checkpoint", action="store_true", default=False)
 
     # PPO
     parser.add_argument("--num_episodes", type=int, default=1)
-    parser.add_argument("--rollout_batch_size", type=int, default=512)
+    parser.add_argument("--rollout_batch_size", type=int, default=64)
     parser.add_argument("--micro_rollout_batch_size", type=int, default=8)
     parser.add_argument("--max_epochs", type=int, default=1)
     parser.add_argument("--prompt_max_len", type=int, default=1024, help="Max tokens for each prompt")
-    parser.add_argument("--generate_max_len", type=int, default=1024, help="Max tokens to generate in PPO")
+    parser.add_argument("--generate_max_len", type=int, default=128, help="Max tokens to generate in PPO")
     parser.add_argument("--max_len", type=int, default=None, help="deprecated max_len")
     parser.add_argument("--max_samples", type=int, default=1000000)
     parser.add_argument("--max_norm", type=float, default=1.0, help="Gradient clipping")
     parser.add_argument("--l2", type=float, default=0.0, help="weight decay loss")
     parser.add_argument("--ptx_coef", type=float, default=0.05, help="PPO-ptx loss coef")
+    parser.add_argument(
+        "--intrinsic_reward_coef",
+        type=float,
+        default=0.01,
+        help="ToSCA beta_2 for intrinsic motivation reward",
+    )
+    parser.add_argument(
+        "--disable_dense_satisfaction_reward",
+        action="store_true",
+        default=False,
+        help="Use OpenRLHF sparse terminal reward instead of ToSCA dense r_sat",
+    )
     parser.add_argument("--eps_clip", type=float, default=0.2, help="PPO clip range")
     parser.add_argument("--value_clip", type=float, default=0.2, help="PPO value clip range")
     parser.add_argument("--lambd", type=float, default=0.95, help="PPO GAE lambd")
     parser.add_argument("--gamma", type=float, default=1, help="PPO GAE gamma")
     parser.add_argument("--micro_train_batch_size", type=int, default=4, help="batch size per GPU")
-    parser.add_argument("--train_batch_size", type=int, default=128, help="Global training batch size")
+    parser.add_argument("--train_batch_size", type=int, default=64, help="Global training batch size")
     parser.add_argument("--normalize_reward", action="store_true", default=False, help="Enable Reward Normazation")
     parser.add_argument("--top_p", type=float, default=1.0)
+    parser.add_argument("--top_k", type=int, default=None)
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--freezing_actor_steps", type=int, default=-1, help="Used for critic initialization")
     parser.add_argument(
         "--n_samples_per_prompt", type=int, default=1, help="number of responses for each prompt in generation"
     )
     parser.add_argument("--save_value_network", action="store_true", default=False, help="Save critic model")
-    parser.add_argument("--actor_learning_rate", type=float, default=1e-6)
-    parser.add_argument("--critic_learning_rate", type=float, default=9e-6)
+    parser.add_argument("--actor_learning_rate", type=float, default=9e-7)
+    parser.add_argument("--critic_learning_rate", type=float, default=9e-4)
     parser.add_argument("--kl_target", type=float, default=None)
     parser.add_argument("--init_kl_coef", type=float, default=0.01, help="KL penalty in PPO")
     parser.add_argument("--adam_betas", type=float, nargs=2, default=(0.9, 0.95), help="Betas for Adam optimizer")
@@ -359,6 +375,10 @@ if __name__ == "__main__":
     parser.add_argument("--pretrain_split", type=str, default="train")
     parser.add_argument("--input_key", type=str, default="input", help="JSON dataset key")
     parser.add_argument("--input_template", type=str, default="User: {}\nAssistant: ")
+    parser.add_argument("--apply_tosca_prompt", action="store_true", default=False)
+    parser.add_argument("--strategies", type=str, default=None, help="Comma-separated strategy names")
+    parser.add_argument("--strategy_key", type=str, default="strategy", help="JSON dataset key for low-level strategy")
+    parser.add_argument("--is_dailydialogue", action="store_true", default=False)
     parser.add_argument(
         "--apply_chat_template", action="store_true", default=False, help="Use HF tokenizer chat template"
     )
