@@ -1,7 +1,7 @@
 <div align="center">
 
-# ToSCA (**Temporal and Strategic Abstractions of Conversational Agents**)
-
+# ToSCA 
+(**Temporal and Strategic Abstractions of Conversational Agents**)
 
 Code for the paper **_ToSCA: Leveraging Hierarchical Reinforcement Learning on Temporal and Strategic Abstractions of Conversational Agents_**<br>
 EMNLP 2026 Findings
@@ -16,6 +16,14 @@ EMNLP 2026 Findings
 [How It Works](#how-it-works) | [Quick Start](#quick-start) | [Data](#data) | [Training](#training) | [Results](#reported-results)
 
 </div>
+
+---
+
+## Where It Comes From
+
+We name our framework ToSCA, alluding to Puccini’s opera Tosca and, more broadly, to the hierarchical structure of operatic performance. In an opera, overarching dramatic intentions and motives are not expressed directly; rather, they unfold through a sequence of concrete acts, actions, and utterances. This offers a natural metaphor for our framework: instead of treating a dialogue response as an isolated sequence of tokens, ToSCA first determines a high-level communicative strategy and then realizes it through low-level linguistic actions. In this sense, the term act carries a deliberate double meaning, referring both to a dramatic unit in an opera and to the concrete communicative actions produced by an agent.
+
+The connection is particularly resonant with Puccini’s Tosca, whose characters are driven by high-level motives—such as love, loyalty, fear, and control—that shape their subsequent actions and expressions. Analogously, ToSCA models conversational behavior as a hierarchical process in which higher-level strategic intentions govern how specific responses are generated. Thus, the name reflects an opera-inspired view of dialogue: decide the act before uttering the line, with communicative strategy serving as the dramatic intention that guides its concrete linguistic realization.
 
 ---
 
