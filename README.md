@@ -1,8 +1,7 @@
 <div align="center">
 
-# ToSCA
+# ToSCA (**Temporal and Strategic Abstractions of Conversational Agents**)
 
-**Temporal and Strategic Abstractions of Conversational Agents**
 
 Code for the paper **_ToSCA: Leveraging Hierarchical Reinforcement Learning on Temporal and Strategic Abstractions of Conversational Agents_**<br>
 EMNLP 2026 Findings
