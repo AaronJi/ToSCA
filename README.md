@@ -18,9 +18,6 @@ EMNLP 2026 Findings
 </div>
 
 ---
-<p align="center">
-  <img src="./assets/tosca-opera-sketch.png" alt="TOSCA Opera Sketch" width="900">
-</p>
 
 ## Where It Comes From
 
@@ -28,7 +25,9 @@ We name our framework **ToSCA**, alluding to Puccini’s opera *Tosca* and, more
 
 The connection is particularly resonant with Puccini’s Tosca, whose characters are driven by *high-level motives—such as love, loyalty, fear, and control*—that shape their subsequent actions and expressions. Analogously, ToSCA models conversational behavior as a hierarchical process in which **higher-level strategic intentions govern how specific responses are generated**. Thus, the name reflects an opera-inspired view of dialogue: decide the act before uttering the line, with communicative strategy serving as the dramatic intention that guides its concrete linguistic realization.
 
-
+<p align="center">
+  <img src="./assets/ToSCA-opera-paradigm-sketch.png" alt="TOSCA Opera Sketch" width="900">
+</p>
 
 ---
 
