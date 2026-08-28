@@ -58,6 +58,12 @@ flowchart LR
 
 The complete objectives are collected later in [Method Details](#method-details).
 
+<p align="center">
+  <a href="./assets/framework.pdf">
+    <img src="./assets/framework.png" alt="TOSCA Framework" width="900">
+  </a>
+</p>
+
 ## What Is Included
 
 This implementation is based on **OpenRLHF 0.3.8**.
