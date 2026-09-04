@@ -59,8 +59,8 @@ flowchart LR
 The complete objectives are collected later in [Method Details](#method-details).
 
 <p align="center">
-  <a href="./assets/framework.pdf">
-    <img src="./assets/framework.png" alt="TOSCA Framework" width="900">
+  <a href="./assets/framework_v3.pdf">
+    <img src="./assets/framework_v3.png" alt="TOSCA Framework" width="900">
   </a>
 </p>
 
